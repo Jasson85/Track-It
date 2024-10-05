@@ -1,0 +1,39 @@
+<?php
+$conexion = mysqli_connect("localhost", "root", "usbw", "inpahu", 3307);
+
+// Validar la conexión
+if (!$conexion) {
+  echo "Error: No se pudo conectar a la base de datos.";
+  exit;
+}
+
+// **Validación de entrada:**
+if (!isset($_POST['codigo']) || !is_numeric($_POST['codigo'])) {
+  echo "Error: Debe ingresar un código válido.";
+  exit;
+}
+
+$codigo = mysqli_real_escape_string($conexion, $_POST['codigo']);
+
+// **Preparación de la consulta:**
+$query = "DELETE FROM usuarios WHERE cod = '$codigo'";
+
+// **Ejecución de la consulta:**
+$resultado = mysqli_query($conexion, $query);
+
+// **Manejo de errores:**
+if (!$resultado) {
+  echo "Error al eliminar el usuario: " . mysqli_error($conexion);
+  exit;
+}
+
+// **Verificación de filas afectadas:**
+if (mysqli_affected_rows($conexion) > 0) {
+  echo "Usuario con código $codigo eliminado exitosamente.";
+} else {
+  echo "No se encontró un usuario con el código $codigo.";
+}
+
+// Cerrar la conexión
+mysqli_close($conexion);
+?>

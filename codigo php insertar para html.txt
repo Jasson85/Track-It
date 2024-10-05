@@ -1,0 +1,18 @@
+<html>
+<head>
+<title>Inserta a Base Mysql</title>
+</head>
+<body>
+<?php
+$conexion=mysqli_connect("localhost","root","usbw","inpahu","3307") or
+die("Problemas con la conexión");
+
+mysqli_query($conexion,"insert into usuarios(cod,nom) values($_REQUEST[codigo],'$_REQUEST[nombre]')")
+or die("Problemas en el select".mysqli_error($conexion));
+
+mysqli_close($conexion);
+
+echo "El Usuario ingresado.";
+?>
+</body>
+</html>

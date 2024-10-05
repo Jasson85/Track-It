@@ -1,0 +1,19 @@
+<html>
+<head>
+<title>Consulta a Base Mysql</title>
+ <meta charset="utf-8">
+</head>
+<body>
+<?php
+$conexion=mysqli_connect("localhost","root","usbw","inpahu","3307") or
+die("Problemas con la conexión");
+$buscar=mysqli_query($conexion,"select * from usuarios where cod=$_REQUEST[codigo]")
+or die("Problemas en el select".mysqli_error($conexion));
+  if ($reg = $buscar->fetch_array())
+    echo '<br> Nombre es:' . $reg['nom'];
+  else
+    echo 'No existe  código';
+mysqli_close($conexion);
+?>
+</body>
+</html>

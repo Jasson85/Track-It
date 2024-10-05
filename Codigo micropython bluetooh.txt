@@ -1,0 +1,164 @@
+# Prueba de concepto de un REPL (Read-Eval-Print Loop) sobre UART BLE (Bluetooth Low Energy).
+# Este código ha sido probado con la aplicación Adafruit Bluefruit en Android.
+# Asegúrate de configurar los caracteres de fin de línea en \r\n.
+
+import bluetooth  # Librería para manejar Bluetooth
+import io  # Entrada/salida para manejo de archivos o buffers
+import os  # Sistema operativo para funcionalidades como acceso a archivos
+import micropython  # Librería específica para MicroPython
+import machine  # Para interactuar con el hardware de la placa
+from micropython import const  # Permite definir constantes de una forma más eficiente
+import struct  # Para trabajar con estructuras de datos de bajo nivel
+import time  # Manejo de tiempo y pausas
+from machine import Pin  # Manejo de los pines de la placa
+
+# Configuramos un pin de salida (por ejemplo, para encender o apagar un LED)
+pbt = Pin(2, Pin.OUT)
+pbt.off()  # Apagamos el pin al inicio
+
+# Definimos algunos eventos relacionados con BLE (Bluetooth Low Energy)
+_IRQ_CENTRAL_CONNECT = const(1)  # Se activa cuando un dispositivo central se conecta
+_IRQ_CENTRAL_DISCONNECT = const(2)  # Se activa cuando un dispositivo central se desconecta
+_IRQ_GATTS_WRITE = const(3)  # Se activa cuando se escribe en una característica GATT
+
+# Definimos banderas para los permisos de escritura y notificación de las características UART
+_FLAG_WRITE = const(0x0008)
+_FLAG_NOTIFY = const(0x0010)
+
+# Definimos los UUID para los servicios y características UART BLE
+_UART_UUID = bluetooth.UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
+_UART_TX = (bluetooth.UUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E"), _FLAG_NOTIFY)
+_UART_RX = (bluetooth.UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E"), _FLAG_WRITE)
+_UART_SERVICE = (_UART_UUID, (_UART_TX, _UART_RX))
+
+# UUID para identificar la apariencia del dispositivo como una computadora genérica
+_ADV_APPEARANCE_GENERIC_COMPUTER = const(128)
+
+# Clase para manejar la comunicación UART sobre BLE
+class BLEUART:
+    def __init__(self, ble, name, rxbuf=1000):
+        # Inicializamos la conexión BLE y configuramos algunos parámetros
+        self._ble = ble
+        time.sleep(0.5)  # Esperamos medio segundo antes de activar el Bluetooth
+        self._ble.active(True)  # Activamos el adaptador Bluetooth
+        # self._ble.config(mtu=200)  # Descomentar para ajustar el tamaño máximo de paquete (opcional)
+        self._ble.irq(self._irq)  # Asignamos la función de interrupción
+        # Registramos los servicios y guardamos los manejadores para las características de TX y RX
+        ((self._tx_handle, self._rx_handle),) = self._ble.gatts_register_services((_UART_SERVICE,))
+        # Ajustamos el tamaño del buffer de recepción (rx) y activamos el modo de agregar datos
+        self._ble.gatts_set_buffer(self._rx_handle, rxbuf, True)
+        self._connections = set()  # Conjunto para guardar las conexiones activas
+        self._rx_buffer = bytearray()  # Buffer para los datos recibidos
+        self._handler = None  # Manejador para los datos recibidos
+        self._disconecthandler = None  # Manejador para la desconexión
+
+        # Creamos el payload para la publicidad del dispositivo BLE
+        self._payload = advertising_payload(
+            name=name, appearance=_ADV_APPEARANCE_GENERIC_COMPUTER)
+        self._advertise()  # Iniciamos la publicidad
+
+    # Método para definir un manejador cuando se reciben datos
+    def irq(self, handler):
+        self._handler = handler
+        
+    # Método para definir un manejador cuando ocurre una desconexión
+    def discnthandler(self, handler):
+        self._disconecthandler = handler
+
+    # Función de interrupción que maneja diferentes eventos de BLE
+    def _irq(self, event, data):
+        if event == _IRQ_CENTRAL_CONNECT:  # Si un dispositivo se conecta
+            conn_handle, _, _ = data
+            print("_IRQ_CENTRAL_CONNECT")  # Imprimimos un mensaje
+            pbt.on()  # Encendemos el pin (LED o lo que sea)
+            self._connections.add(conn_handle)  # Guardamos la conexión
+        elif event == _IRQ_CENTRAL_DISCONNECT:  # Si un dispositivo se desconecta
+            conn_handle, _, _ = data
+            pbt.off()  # Apagamos el pin
+            print('_IRQ_CENTRAL_DISCONNECT')  # Imprimimos un mensaje
+            if self._disconecthandler:
+                self._disconecthandler()  # Ejecutamos el manejador de desconexión si existe
+            if conn_handle in self._connections:
+                self._connections.remove(conn_handle)  # Eliminamos la conexión de la lista
+            self._advertise()  # Volvemos a empezar la publicidad para permitir nuevas conexiones
+        elif event == _IRQ_GATTS_WRITE:  # Si se escribe en la característica RX
+            conn_handle, value_handle = data
+            if conn_handle in self._connections and value_handle == self._rx_handle:
+                self._rx_buffer += self._ble.gatts_read(self._rx_handle)  # Leemos los datos recibidos
+                if self._handler:
+                    self._handler()  # Ejecutamos el manejador de recepción si existe
+
+    # Método para verificar si hay datos disponibles en el buffer
+    def any(self):
+        return len(self._rx_buffer)
+
+    # Método para leer datos del buffer
+    def read(self, sz=None):
+        if not sz:  # Si no se especifica un tamaño, leemos todo lo disponible
+            sz = len(self._rx_buffer)
+        result = self._rx_buffer[0:sz]  # Tomamos los primeros 'sz' bytes
+        self._rx_buffer = self._rx_buffer[sz:]  # Actualizamos el buffer
+        return result
+
+    # Método para escribir datos a los dispositivos conectados
+    def write(self, data):
+        for conn_handle in self._connections:
+            self._ble.gatts_notify(conn_handle, self._tx_handle, data)  # Enviamos una notificación
+
+    # Método para cerrar todas las conexiones
+    def close(self):
+        for conn_handle in self._connections:
+            self._ble.gap_disconnect(conn_handle)  # Desconectamos cada conexión
+        self._connections.clear()  # Limpiamos la lista de conexiones
+
+    # Método para iniciar la publicidad BLE
+    def _advertise(self, interval_us=500000):
+        self._ble.gap_advertise(interval_us, adv_data=self._payload)  # Empezamos a hacer publicidad
+
+# Funciones auxiliares para crear el payload de publicidad
+_ADV_TYPE_FLAGS = const(0x01)
+_ADV_TYPE_NAME = const(0x09)
+_ADV_TYPE_UUID16_COMPLETE = const(0x3)
+_ADV_TYPE_UUID32_COMPLETE = const(0x5)
+_ADV_TYPE_UUID128_COMPLETE = const(0x7)
+_ADV_TYPE_UUID16_MORE = const(0x2)
+_ADV_TYPE_UUID32_MORE = const(0x4)
+_ADV_TYPE_UUID128_MORE = const(0x6)
+_ADV_TYPE_APPEARANCE = const(0x19)
+
+# Función para generar el payload de publicidad
+def advertising_payload(limited_disc=False, br_edr=False, name=None, services=None, appearance=0):
+    payload = bytearray()
+
+    def _append(adv_type, value):
+        nonlocal payload
+        payload += struct.pack("BB", len(value) + 1, adv_type) + value
+
+    _append(_ADV_TYPE_FLAGS, struct.pack("B", (0x01 if limited_disc else 0x02) +
+                    (0x18 if br_edr else 0x04)))
+
+    if name:
+        _append(_ADV_TYPE_NAME, name)
+
+    if services:
+        for uuid in services:
+            b = bytes(uuid)
+            if len(b) == 2:
+                _append(_ADV_TYPE_UUID16_COMPLETE, b)
+            elif len(b) == 4:
+                _append(_ADV_TYPE_UUID32_COMPLETE, b)
+            elif len(b) == 16:
+                _append(_ADV_TYPE_UUID128_COMPLETE, b)
+
+    if appearance:
+        _append(_ADV_TYPE_APPEARANCE, struct.pack("<h", appearance))
+
+    return payload
+
+# Función de demostración
+def demo():
+    print("demo")
+
+# Punto de entrada si el script se ejecuta directamente
+if __name__ == "__main__":
+    demo()

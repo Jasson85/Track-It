@@ -1,0 +1,28 @@
+<html>
+<head>
+<title>Lista la Base cun Mysql</title>
+</head>
+<body>
+
+<?php
+$conexion=mysqli_connect("localhost","root","usbw","inpahu","3307") or
+die("Problemas con la conexión");
+
+$registros=mysqli_query($conexion,"select cod,nom from usuarios") or
+die("Problemas en el select:".mysqli_error($conexion));
+
+while ($reg=mysqli_fetch_array($registros))
+{
+echo "Codigo:".$reg['cod']."<br>";
+echo "Nombre:".$reg['nom']."<br>";
+
+}
+echo "<br>";
+echo "<hr>";
+
+mysqli_close($conexion);
+
+echo "Listado";
+?>
+</body>
+</html>

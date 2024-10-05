@@ -1,0 +1,48 @@
+import machine, bluetooth
+from BLE import BLEUART  # Importamos la clase BLEUART desde el archivo BLE.
+import time
+
+# Definimos el nombre que se verá cuando el dispositivo esté disponible por Bluetooth
+nombreBluetooth = "Prueba"
+
+# Instanciamos el objeto BLE que manejará la comunicación Bluetooth
+ble = bluetooth.BLE()
+
+# Instanciamos la clase BLEUART que nos permite manejar el protocolo UART a través de Bluetooth
+buart = BLEUART(ble, nombreBluetooth)
+
+
+# Definimos una función para manejar los datos que se reciben a través de Bluetooth
+def on_RX():
+    # Leemos los datos recibidos, decodificamos el buffer, y eliminamos caracteres innecesarios como \x00
+    rxbuffer = buart.read().decode().rstrip('\x00')
+    
+    # Eliminamos cualquier carácter de salto de línea y retorno de carro
+    rxbuffer = rxbuffer.replace("\n", "")
+    rxbuffer = rxbuffer.replace("\r", "")
+    
+    # Imprimimos el mensaje recibido en la consola
+    print(rxbuffer)
+
+# Definimos una función que se ejecuta cuando la conexión Bluetooth se desconecta
+def on_Disconect():
+    # Mensaje que indica que la aplicación (APP) que estaba conectada vía Bluetooth se ha desconectado
+    print("APP Desconectada")
+
+# Asignamos la función 'on_RX' como el manejador de interrupciones cuando se reciben datos vía Bluetooth
+buart.irq(handler=on_RX)
+
+# Asignamos la función 'on_Disconect' como el manejador cuando se detecta una desconexión
+buart.discnthandler(handler=on_Disconect)
+
+
+# Bucle principal del programa
+while True:
+    # Creamos un mensaje de prueba con el texto "hola"
+    temp = "hola"
+    
+    # Escribimos el mensaje al dispositivo conectado vía Bluetooth, agregando un identificador "EMA01 dice: "
+    buart.write("EMA01 dice: " + str(temp) + "\n")
+    
+    # Esperamos 1 segundo antes de enviar el siguiente mensaje
+    time.sleep(1)

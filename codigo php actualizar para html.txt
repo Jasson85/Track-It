@@ -1,0 +1,37 @@
+<html>
+<head>
+<title>modificar de mysql</title>
+ <meta charset="utf-8">
+</head>
+<body>
+<?php
+$conexion = mysqli_connect("localhost", "root", "usbw", "inpahu", 3307);
+
+// Validar la conexión
+if (!$conexion) {
+    die("Error: No se pudo conectar a la base de datos.");
+}
+
+// Asegurar que el código y el nuevo nombre están presentes
+if (isset($_POST['codigo'], $_POST['nombre'])) {
+    $codigo = mysqli_real_escape_string($conexion, $_POST['codigo']);
+    $nombre = mysqli_real_escape_string($conexion, $_POST['nombre']);
+
+    // Actualizar la información en la base de datos
+    $query = "UPDATE usuarios SET nom = '$nombre' WHERE cod = '$codigo'";
+    $resultado = mysqli_query($conexion, $query);
+
+    if ($resultado) {
+        echo "El nombre ha sido actualizado correctamente.";
+    } else {
+        echo "Error al actualizar el nombre: " . mysqli_error($conexion);
+    }
+} else {
+    echo "Error: Debe proporcionar tanto el código como el nuevo nombre.";
+}
+
+// Cerrar la conexión
+mysqli_close($conexion);
+?>
+</body>
+</html>
